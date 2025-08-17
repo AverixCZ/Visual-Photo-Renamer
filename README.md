@@ -2,6 +2,9 @@
 
 Tento skript je jednoduchý a efektivní desktopový nástroj (GUI), který slouží k hromadnému přejmenování RAW souborů (jako jsou .CR2, .NEF, .ARW) na základě názvů jejich odpovídajících JPG souborů. Klíčovou funkcí je **porovnávání souborů na základě vizuální podobnosti obrazu**, což zajišťuje správné spárování i v případě, že názvy souborů se neshodují.
 
+<img width="894" height="775" alt="image" src="https://github.com/user-attachments/assets/12fcf03f-9e89-4db0-94a6-91b7e0b54583" />
+
+
 ## Klíčové vlastnosti
 
 * **Vizuální párování:** Používá `perceptual hash` k nalezení vizuálně podobných RAW a JPG souborů.
