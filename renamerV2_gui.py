@@ -28,12 +28,14 @@ RAW_EXTENSIONS = {'.cr2', '.nef', '.arw', '.dng', '.raf', '.orf', '.rw2', '.pef'
 JPG_EXTENSIONS = {'.jpg', '.jpeg'}
 HASH_SIZE = 16
 DEFAULT_SIMILARITY_THRESHOLD = 5
+CONFIG_FILE = "renamer_config.json"
 
 class FileRenamerCore:
-    """Základní logika pro přejmenování souborů (převzato z původního skriptu)"""
+    """Základní logika pro přejmenování souborů"""
     
-    def __init__(self, folder_path: str, similarity_threshold: int = DEFAULT_SIMILARITY_THRESHOLD):
-        self.folder_path = Path(folder_path)
+    def __init__(self, raw_folder_path: str, jpg_folder_path: str, similarity_threshold: int = DEFAULT_SIMILARITY_THRESHOLD):
+        self.raw_folder_path = Path(raw_folder_path)
+        self.jpg_folder_path = Path(jpg_folder_path)
         self.similarity_threshold = similarity_threshold
         self.raw_files = []
         self.jpg_files = []
@@ -41,19 +43,28 @@ class FileRenamerCore:
         self.log_file = None
     
     def scan_files(self) -> Tuple[int, int]:
-        """Prohledá složku a rozdělí soubory na RAW a JPG."""
+        """Prohledá složky a rozdělí soubory na RAW a JPG."""
         self.raw_files = []
         self.jpg_files = []
         
-        if not self.folder_path.exists():
-            raise FileNotFoundError(f"Složka {self.folder_path} neexistuje.")
+        if not self.raw_folder_path.exists():
+            raise FileNotFoundError(f"RAW složka {self.raw_folder_path} neexistuje.")
         
-        for file_path in self.folder_path.iterdir():
+        if not self.jpg_folder_path.exists():
+            raise FileNotFoundError(f"JPG složka {self.jpg_folder_path} neexistuje.")
+        
+        # Skenování RAW souborů
+        for file_path in self.raw_folder_path.iterdir():
             if file_path.is_file():
                 ext = file_path.suffix.lower()
                 if ext in RAW_EXTENSIONS:
                     self.raw_files.append(file_path)
-                elif ext in JPG_EXTENSIONS:
+        
+        # Skenování JPG souborů
+        for file_path in self.jpg_folder_path.iterdir():
+            if file_path.is_file():
+                ext = file_path.suffix.lower()
+                if ext in JPG_EXTENSIONS:
                     self.jpg_files.append(file_path)
         
         return len(self.raw_files), len(self.jpg_files)
@@ -131,11 +142,12 @@ class FileRenamerCore:
         """Provede přejmenování souborů a vytvoří záložní log."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_filename = f"rename_backup_{timestamp}.json"
-        self.log_file = self.folder_path / log_filename
+        self.log_file = self.raw_folder_path / log_filename
         
         backup_data = {
             'timestamp': datetime.now().isoformat(),
-            'folder': str(self.folder_path),
+            'raw_folder': str(self.raw_folder_path),
+            'jpg_folder': str(self.jpg_folder_path),
             'operations': []
         }
         
@@ -175,16 +187,45 @@ class FileRenamerGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("RAW File Renamer - Přejmenování RAW souborů")
-        self.root.geometry("800x700")
+        self.root.geometry("900x750")
         
         # Proměnné
-        self.folder_path = tk.StringVar()
+        self.raw_folder_path = tk.StringVar()
+        self.jpg_folder_path = tk.StringVar()
         self.similarity_threshold = tk.IntVar(value=DEFAULT_SIMILARITY_THRESHOLD)
         self.renamer_core = None
         self.rename_plan = []
         self.pairs = []
         
+        # Načtení konfigurace
+        self.load_config()
+        
         self.create_widgets()
+    
+    def load_config(self):
+        """Načte uloženou konfiguraci"""
+        try:
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    self.jpg_folder_path.set(config.get('jpg_folder_path', ''))
+                    self.raw_folder_path.set(config.get('raw_folder_path', ''))
+                    self.similarity_threshold.set(config.get('similarity_threshold', DEFAULT_SIMILARITY_THRESHOLD))
+        except Exception:
+            pass  # Ignorujeme chyby při načítání konfigurace
+    
+    def save_config(self):
+        """Uloží aktuální konfiguraci"""
+        try:
+            config = {
+                'jpg_folder_path': self.jpg_folder_path.get(),
+                'raw_folder_path': self.raw_folder_path.get(),
+                'similarity_threshold': self.similarity_threshold.get()
+            }
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass  # Ignorujeme chyby při ukládání konfigurace
     
     def create_widgets(self):
         # Hlavní frame
@@ -196,23 +237,37 @@ class FileRenamerGUI:
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         
-        # Výběr složky
-        ttk.Label(main_frame, text="Složka s obrázky:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        # Výběr RAW složky
+        ttk.Label(main_frame, text="Složka s RAW soubory:").grid(row=0, column=0, sticky=tk.W, pady=5)
         
-        folder_frame = ttk.Frame(main_frame)
-        folder_frame.grid(row=0, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        folder_frame.columnconfigure(0, weight=1)
+        raw_folder_frame = ttk.Frame(main_frame)
+        raw_folder_frame.grid(row=0, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        raw_folder_frame.columnconfigure(0, weight=1)
         
-        self.folder_entry = ttk.Entry(folder_frame, textvariable=self.folder_path, width=50)
-        self.folder_entry.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
+        self.raw_folder_entry = ttk.Entry(raw_folder_frame, textvariable=self.raw_folder_path, width=50)
+        self.raw_folder_entry.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
         
-        ttk.Button(folder_frame, text="Procházet...", command=self.browse_folder).grid(row=0, column=1)
+        ttk.Button(raw_folder_frame, text="Procházet...", 
+                  command=self.browse_raw_folder).grid(row=0, column=1)
+        
+        # Výběr JPG složky
+        ttk.Label(main_frame, text="Složka s JPG soubory:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        
+        jpg_folder_frame = ttk.Frame(main_frame)
+        jpg_folder_frame.grid(row=1, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        jpg_folder_frame.columnconfigure(0, weight=1)
+        
+        self.jpg_folder_entry = ttk.Entry(jpg_folder_frame, textvariable=self.jpg_folder_path, width=50)
+        self.jpg_folder_entry.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
+        
+        ttk.Button(jpg_folder_frame, text="Procházet...", 
+                  command=self.browse_jpg_folder).grid(row=0, column=1)
         
         # Nastavení podobnosti
-        ttk.Label(main_frame, text="Práh podobnosti:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Práh podobnosti:").grid(row=2, column=0, sticky=tk.W, pady=5)
         
         similarity_frame = ttk.Frame(main_frame)
-        similarity_frame.grid(row=1, column=1, sticky=tk.W, pady=5)
+        similarity_frame.grid(row=2, column=1, sticky=tk.W, pady=5)
         
         ttk.Scale(similarity_frame, from_=1, to=20, variable=self.similarity_threshold, 
                  orient=tk.HORIZONTAL, length=200).grid(row=0, column=0, padx=(0, 10))
@@ -224,7 +279,7 @@ class FileRenamerGUI:
         
         # Tlačítka
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=2, column=0, columnspan=3, pady=20)
+        button_frame.grid(row=3, column=0, columnspan=3, pady=20)
         
         self.scan_button = ttk.Button(button_frame, text="Skenovat soubory", command=self.scan_files)
         self.scan_button.grid(row=0, column=0, padx=5)
@@ -240,17 +295,17 @@ class FileRenamerGUI:
         
         # Progress bar
         self.progress = ttk.Progressbar(main_frame, mode='determinate')
-        self.progress.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        self.progress.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
         
         self.status_label = ttk.Label(main_frame, text="Připraven")
-        self.status_label.grid(row=4, column=0, columnspan=3, pady=5)
+        self.status_label.grid(row=5, column=0, columnspan=3, pady=5)
         
         # Výsledky
         results_frame = ttk.LabelFrame(main_frame, text="Výsledky", padding="5")
-        results_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
+        results_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
         results_frame.columnconfigure(0, weight=1)
         results_frame.rowconfigure(0, weight=1)
-        main_frame.rowconfigure(5, weight=1)
+        main_frame.rowconfigure(6, weight=1)
         
         # Treeview pro zobrazení párů
         columns = ('RAW soubor', 'JPG soubor', 'Podobnost', 'Nový název')
@@ -272,18 +327,33 @@ class FileRenamerGUI:
     def update_similarity_label(self, *args):
         self.similarity_label.config(text=str(self.similarity_threshold.get()))
     
-    def browse_folder(self):
-        folder = filedialog.askdirectory()
+    def browse_raw_folder(self):
+        folder = filedialog.askdirectory(title="Vyberte složku s RAW soubory")
         if folder:
-            self.folder_path.set(folder)
+            self.raw_folder_path.set(folder)
+            self.save_config()
+    
+    def browse_jpg_folder(self):
+        folder = filedialog.askdirectory(title="Vyberte složku s JPG soubory")
+        if folder:
+            self.jpg_folder_path.set(folder)
+            self.save_config()
     
     def scan_files(self):
-        if not self.folder_path.get():
-            messagebox.showerror("Chyba", "Vyberte prosím složku s obrázky.")
+        if not self.raw_folder_path.get():
+            messagebox.showerror("Chyba", "Vyberte prosím složku s RAW soubory.")
+            return
+        
+        if not self.jpg_folder_path.get():
+            messagebox.showerror("Chyba", "Vyberte prosím složku s JPG soubory.")
             return
         
         try:
-            self.renamer_core = FileRenamerCore(self.folder_path.get(), self.similarity_threshold.get())
+            self.renamer_core = FileRenamerCore(
+                self.raw_folder_path.get(), 
+                self.jpg_folder_path.get(), 
+                self.similarity_threshold.get()
+            )
             raw_count, jpg_count = self.renamer_core.scan_files()
             
             self.status_label.config(text=f"Nalezeno {raw_count} RAW souborů a {jpg_count} JPG souborů")
@@ -291,7 +361,7 @@ class FileRenamerGUI:
             if raw_count > 0 and jpg_count > 0:
                 self.find_pairs_button.config(state=tk.NORMAL)
             else:
-                messagebox.showwarning("Upozornění", "Ve složce nebyly nalezeny RAW nebo JPG soubory.")
+                messagebox.showwarning("Upozornění", "Ve složkách nebyly nalezeny RAW nebo JPG soubory.")
                 
         except Exception as e:
             messagebox.showerror("Chyba", f"Chyba při skenování souborů: {e}")
